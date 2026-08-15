@@ -7,3 +7,51 @@
 @media(max-width:520px){.setupCard{grid-template-columns:auto 1fr}.setupCard .primaryButton{grid-column:1/-1}.reportGrid{grid-template-columns:repeat(2,1fr);gap:10px}.reportStat{border-inline-end:0;border-bottom:1px solid var(--line);padding-bottom:8px}.scoreRow{grid-template-columns:92px 1fr}.scoreRing{min-height:92px}.scoreRing strong{font-size:29px}}
 
 .syncCard{margin:12px 0}.syncHead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.syncHead h3{margin:4px 0 4px}.syncDot{font-size:20px;opacity:.35}.syncDot.on{opacity:1}.syncCard .note{margin:10px 0 0}.syncCard .settingsActions{margin-top:12px}
+
+/* V6.2 iPhone / PWA polish */
+html{background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+body{-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none;}
+button,input,select,textarea{font:inherit;}
+button{touch-action:manipulation;}
+.primaryButton,.secondaryButton,.dangerButton,.pillButton,.navItem{min-height:44px;}
+.app{min-height:100svh;padding-bottom:calc(92px + env(safe-area-inset-bottom));}
+.shell{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right));}
+.bottomNav{bottom:max(10px,env(safe-area-inset-bottom));}
+.modalBackdrop{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);}
+.modal,.scanSheet{padding-bottom:calc(28px + env(safe-area-inset-bottom));}
+.modalBackdrop input,.modalBackdrop select,.modalBackdrop textarea,.checkGrid input,.checkGrid select,.formGrid input,.formGrid select,.fullLabel textarea,.fullLabel select,.bigInput input{font-size:16px;}
+.uploadBox{min-height:clamp(210px,48vw,340px);}
+.uploadBox img{width:100%;height:auto;max-height:min(52svh,420px);object-fit:contain;background:#f1f3ef;}
+.barcodeCamera video{width:100%;height:min(58svh,360px);object-fit:cover;}
+.lookupCard,.mealRow,.workoutCard,.weightRow{min-width:0;}
+.lookupName strong,.mealMain strong,.workoutHead h3,.lookupName small{overflow-wrap:anywhere;}
+@media(max-width:430px){
+  .shell{padding-top:14px;padding-bottom:18px;}
+  .topbar{margin-bottom:14px;}
+  .brandIcon,.avatar{width:40px;height:40px;border-radius:13px;}
+  .title{font-size:23px;}
+  .heroKcal{font-size:39px;}
+  .quickGrid{gap:8px;}
+  .quickCard{min-height:104px;padding:13px;border-radius:18px;}
+  .nutritionActions{grid-template-columns:1fr;}
+  .scanButtons{grid-template-columns:1fr;}
+  .lookupTopBar{align-items:stretch;flex-direction:column;}
+  .lookupAdd{grid-template-columns:64px 1fr;}
+  .lookupAdd input{grid-column:1;}
+  .lookupAdd>span{grid-column:2;}
+  .lookupAdd select{grid-column:1 / -1;}
+  .lookupAdd button{grid-column:1 / -1;}
+  .reportGrid{padding:11px;}
+  .bottomNav{width:calc(100% - 16px);padding:6px 5px;border-radius:20px;}
+  .navItem{padding:6px 4px;min-height:48px;}
+  .navIcon{font-size:17px;}
+  .modal,.scanSheet{width:100%;border-radius:24px 24px 0 0;padding-left:13px;padding-right:13px;}
+}
+@media(min-width:700px){.app{padding-bottom:100px;}.bottomNav{bottom:20px;}.modalBackdrop{padding-bottom:env(safe-area-inset-bottom);}}
+
+.barcodeCamera{position:relative;overflow:hidden;border-radius:18px;background:#050505;margin:12px 0;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center}
+.barcodeCamera video{width:100%;height:100%;object-fit:cover}
+.barcodeFrame{position:absolute;inset:18% 9%;border:2px solid rgba(255,255,255,.9);border-radius:14px;display:flex;align-items:flex-end;justify-content:center;padding:0 10px 10px;pointer-events:none;box-shadow:0 0 0 999px rgba(0,0,0,.18)}
+.barcodeFrame span{background:rgba(0,0,0,.65);color:#fff;border-radius:999px;padding:6px 10px;font-size:12px}
+.barcodeFallback{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap}
+@media(max-width:480px){.barcodeCamera{aspect-ratio:3/4;margin-inline:-2px}.barcodeFrame{inset:30% 7%}.barcodeFallback{align-items:stretch}.barcodeFallback .secondaryButton{width:100%}}

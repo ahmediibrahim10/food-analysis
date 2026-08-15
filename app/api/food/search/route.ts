@@ -62,17 +62,110 @@ async function searchOFF(query: string): Promise<FoodResult[]> {
 }
 
 async function barcodeOFF(code: string): Promise<FoodResult | null> {
-  const r = await fetch(`https://world.openfoodfacts.org/api/v3/product/${encodeURIComponent(code)}?fields=code,product_name,brands,nutriments,completeness`, { cache: "no-store", headers: { "User-Agent": "HealthOS/2.0 personal nutrition app" } });
-  if (!r.ok) return null;
-  const data = await r.json(); if (data.status !== 1 || !data.product) return null; const p = data.product;
-  return { name: p.product_name || `Barcode ${code}`, brand: p.brands || undefined, barcode: p.code || code, source: "Open Food Facts", referenceId: p.code || code, calories100g: n(p.nutriments?.["energy-kcal_100g"]), protein100g: n(p.nutriments?.proteins_100g), carbs100g: n(p.nutriments?.carbohydrates_100g), fat100g: n(p.nutriments?.fat_100g), fiber100g: n(p.nutriments?.fiber_100g), confidence: .94, note: "Barcode match · Open Food Facts · per 100g" };
+  const clean = code.replace(/\D/g, "");
+  if (!clean) return null;
+
+  // OFF normalizes UPC/EAN codes, but we also try the common
+  // 12↔13 and 13↔14 digit representations used by scanners.
+  const variants = new Set<string>([clean]);
+  if (clean.length === 12) variants.add(`0${clean}`);
+  if (clean.length === 13 && clean.startsWith("0")) variants.add(clean.slice(1));
+  if (clean.length === 13) variants.add(`0${clean}`);
+  if (clean.length === 14 && clean.startsWith("0")) variants.add(clean.slice(1));
+
+  for (const variant of variants) {
+    try {
+      const r = await fetch(
+        `https://world.openfoodfacts.org/api/v3/product/${encodeURIComponent(variant)}?fields=code,product_name,product_name_ar,brands,nutriments,completeness,countries,countries_tags`,
+        {
+          cache: "no-store",
+          headers: { "User-Agent": "HealthOS/2.0 personal nutrition app (personal use)" },
+        }
+      );
+      if (!r.ok) continue;
+      const data = await r.json();
+      if (data.status !== 1 || !data.product) continue;
+
+      const p = data.product;
+      const countries = Array.isArray(p.countries_tags) ? p.countries_tags : [];
+      const regional = countries.some((c: string) =>
+        /saudi|egypt|uae|united-arab-emirates|qatar|kuwait|bahrain|oman|jordan|lebanon|iraq|morocco|algeria|tunisia/i.test(c)
+      );
+
+      return {
+        name: p.product_name_ar || p.product_name || `Barcode ${variant}`,
+        brand: p.brands || undefined,
+        barcode: p.code || variant,
+        source: regional ? "Open Food Facts · Middle East" : "Open Food Facts",
+        referenceId: p.code || variant,
+        calories100g: n(p.nutriments?.["energy-kcal_100g"]),
+        protein100g: n(p.nutriments?.proteins_100g),
+        carbs100g: n(p.nutriments?.carbohydrates_100g),
+        fat100g: n(p.nutriments?.fat_100g),
+        fiber100g: n(p.nutriments?.fiber_100g),
+        confidence: regional ? .97 : .94,
+        note: regional
+          ? "Barcode match · Middle East product data · per 100g"
+          : "Barcode match · Open Food Facts · per 100g",
+      };
+    } catch {
+      // Try the next normalized barcode representation.
+    }
+  }
+  return null;
+}
+
+async function barcodeRegionalSearch(code: string): Promise<FoodResult[]> {
+  const clean = code.replace(/\D/g, "");
+  if (!clean) return [];
+  const url = new URL("https://world.openfoodfacts.org/cgi/search.pl");
+  url.searchParams.set("search_terms", clean);
+  url.searchParams.set("search_simple", "1");
+  url.searchParams.set("action", "process");
+  url.searchParams.set("json", "1");
+  url.searchParams.set("page_size", "10");
+  url.searchParams.set("fields", "code,product_name,product_name_ar,brands,nutriments,completeness,countries_tags");
+  const r = await fetch(url, {
+    cache: "no-store",
+    headers: { "User-Agent": "HealthOS/2.0 personal nutrition app (personal use)" },
+  });
+  if (!r.ok) return [];
+  const data = await r.json();
+  return (data.products || [])
+    .filter((p: any) => String(p.code || "").replace(/\D/g, "") === clean)
+    .map((p: any) => {
+      const countries = Array.isArray(p.countries_tags) ? p.countries_tags : [];
+      const regional = countries.some((c: string) =>
+        /saudi|egypt|uae|united-arab-emirates|qatar|kuwait|bahrain|oman|jordan|lebanon|iraq|morocco|algeria|tunisia/i.test(c)
+      );
+      return {
+        name: p.product_name_ar || p.product_name || `Barcode ${clean}`,
+        brand: p.brands || undefined,
+        barcode: p.code || clean,
+        source: regional ? "Open Food Facts · Middle East" : "Open Food Facts",
+        referenceId: p.code || clean,
+        calories100g: n(p.nutriments?.["energy-kcal_100g"]),
+        protein100g: n(p.nutriments?.proteins_100g),
+        carbs100g: n(p.nutriments?.carbohydrates_100g),
+        fat100g: n(p.nutriments?.fat_100g),
+        fiber100g: n(p.nutriments?.fiber_100g),
+        confidence: regional ? .95 : .90,
+        note: "Barcode database match · per 100g",
+      } as FoodResult;
+    });
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url); const query = searchParams.get("q")?.trim() || ""; const barcode = searchParams.get("barcode")?.trim() || "";
     if (!query && !barcode) return NextResponse.json({ error: "Enter a food or barcode." }, { status: 400 });
-    if (barcode) { const item = await barcodeOFF(barcode.replace(/\D/g, "")); return NextResponse.json({ items: item ? [item] : [], barcode }); }
+    if (barcode) {
+      const clean = barcode.replace(/\D/g, "");
+      const item = await barcodeOFF(clean);
+      if (item) return NextResponse.json({ items: [item], barcode: clean, found: true });
+      const fallback = await barcodeRegionalSearch(clean);
+      return NextResponse.json({ items: fallback.slice(0, 5), barcode: clean, found: fallback.length > 0 });
+    }
     const curated = CURATED.map(x => ({ ...x, relevance: relevance(query, x.name) })).filter(x => (x.relevance || 0) > 0);
     const [u, o] = await Promise.allSettled([searchUSDA(query), searchOFF(query)]);
     const all = [...curated, ...(u.status === "fulfilled" ? u.value : []), ...(o.status === "fulfilled" ? o.value : [])];

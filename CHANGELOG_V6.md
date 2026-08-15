@@ -1,3 +1,11 @@
+# Health OS Changelog
+
+## V6.3.0
+- Replaced native-only barcode detection with ZXing browser camera scanning for iPhone/Safari compatibility.
+- Added barcode normalization variants (UPC/EAN 12/13/14 digit forms).
+- Added Middle East-aware Open Food Facts result labeling and Arabic product-name preference.
+- Added barcode-not-found fallback to AI nutrition-label scanning.
+
 # Health OS V6
 
 ## Huawei Health local bridge
@@ -15,3 +23,14 @@ A normal iPhone PWA cannot silently read Huawei Health's private app storage in 
 - Added progression insights based on completed workouts.
 - Best load/reps per exercise are detected.
 - Suggestions encourage small, conservative progression while preserving form.
+
+## V6.2 — iPhone & Egyptian Arabic polish
+- Added consistent Egyptian Arabic translations for remaining visible UI labels.
+- Localized meal-type selectors and scanner actions.
+- Added dynamic document language/direction for better iOS accessibility.
+- Added iPhone safe-area support for the notch/home indicator.
+- Increased touch targets for mobile controls.
+- Prevented iOS input zoom by using mobile-safe form font sizes.
+- Improved food-photo preview sizing so images are not unnecessarily cropped.
+- Improved barcode camera sizing on small screens.
+- Improved modal and bottom-navigation behavior on narrow iPhone screens.
