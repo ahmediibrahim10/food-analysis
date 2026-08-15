@@ -1,8 +1,8 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { logProviderEvent } from "../../../lib/observability";
+import { logProviderEvent } from "../../../../lib/observability";
 import { NextResponse } from "next/server";
-import { clientKey, fetchWithTimeout, rateLimitSafe, safeServerMessage, requestSize, requestId, jsonHeaders, validateSameOrigin, validateJsonBodySize, assertProductionInfrastructure } from "../../../lib/server-safety";
+import { clientKey, fetchWithTimeout, rateLimitSafe, safeServerMessage, requestSize, requestId, jsonHeaders, validateSameOrigin, validateJsonBodySize, assertProductionInfrastructure } from "../../../../lib/server-safety";
 export const runtime = "nodejs";
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const foodSchema={type:Type.OBJECT,properties:{name:{type:Type.STRING},items:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{name:{type:Type.STRING},estimated_grams:{type:Type.NUMBER},calories:{type:Type.NUMBER},protein_g:{type:Type.NUMBER},carbs_g:{type:Type.NUMBER},fat_g:{type:Type.NUMBER},identification_confidence:{type:Type.NUMBER},portion_confidence:{type:Type.NUMBER},nutrition_confidence:{type:Type.NUMBER}},required:["name","estimated_grams","calories","protein_g","carbs_g","fat_g","identification_confidence","portion_confidence","nutrition_confidence"]}},total:{type:Type.OBJECT,properties:{calories:{type:Type.NUMBER},protein_g:{type:Type.NUMBER},carbs_g:{type:Type.NUMBER},fat_g:{type:Type.NUMBER}},required:["calories","protein_g","carbs_g","fat_g"]}},required:["name","items","total"]};

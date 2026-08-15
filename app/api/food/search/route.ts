@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { logProviderEvent } from "../../../lib/observability";
-import { regionalScore } from "../../../lib/food-ranking";
-import { clientKey, fetchWithTimeout, rateLimitSafe, cacheGet, cacheSet, cachedToken, saveCachedToken, requestId, jsonHeaders, validateSameOrigin, validateJsonBodySize, assertProductionInfrastructure } from "../../../lib/server-safety";
+import { logProviderEvent } from "../../../../lib/observability";
+import { regionalScore } from "../../../../lib/food-ranking";
+import { clientKey, fetchWithTimeout, rateLimitSafe, cacheGet, cacheSet, cachedToken, saveCachedToken, requestId, jsonHeaders, validateSameOrigin, validateJsonBodySize, assertProductionInfrastructure } from "../../../../lib/server-safety";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

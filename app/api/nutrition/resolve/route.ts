@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { clientKey, fetchWithTimeout, rateLimitSafe, requestSize, requestId, jsonHeaders, validateSameOrigin, validateJsonBodySize, assertProductionInfrastructure } from "../../../lib/server-safety";
-import { nutritionQuality } from "../../../lib/validation";
-import { logProviderEvent } from "../../../lib/observability";
+import { clientKey, fetchWithTimeout, rateLimitSafe, requestSize, requestId, jsonHeaders, validateSameOrigin, validateJsonBodySize, assertProductionInfrastructure } from "../../../../lib/server-safety";
+import { nutritionQuality } from "../../../../lib/validation";
+import { logProviderEvent } from "../../../../lib/observability";
 
 export const runtime = "nodejs";
 
