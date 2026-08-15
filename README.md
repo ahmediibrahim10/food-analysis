@@ -1,54 +1,79 @@
-# Health OS V5 — Smart Personal Health OS
+# Health OS V10.2 — Production Hardened
 
-Local-first Next.js PWA designed for personal use on iPhone.
+Local-first Next.js PWA for personal nutrition, workouts, weight and health tracking.
 
-## Included
-- Gemini food photo scanner + database nutrition resolver.
-- USDA FoodData Central + Open Food Facts search/barcode.
-- Egyptian Arabic + English UI with RTL.
-- Local IndexedDB storage with Dexie.
-- Personalized BMR/TDEE + cut/maintain/bulk calorie and macro targets.
-- Daily health score + smart rule-based recommendations.
-- Meal planner based on remaining calories/protein and local staples.
-- Workout logging, exercises, PR/best-set hints, and reusable programs.
-- Weight trend and 7/30-day reports.
-- JSON backup restore + CSV meal export.
-- Apple Health XML import for weight, steps and sleep records.
-- Offline-first core logging; AI/database search still need internet.
-- No analytics, ads, or cloud health database.
+## What V10.2 hardens
 
-## Environment
-Create `.env.local`:
+- Egypt + Saudi Arabia treated as one regional food market.
+- SFDA → Open Food Facts → USDA → curated/AI fallback strategy.
+- Barcode-first lookup without changing the existing iPhone scanner solution.
+- Shared SFDA OAuth token cache through Upstash Redis in production.
+- Distributed rate limiting through Upstash Redis in production.
+- Shared food-result cache through Upstash Redis.
+- Same-origin protection for POST APIs.
+- Request size validation and safe server errors.
+- Secret-free structured provider logs with request IDs.
+- Nutrition sanity/quality checks and per-100g normalization.
+- Explicit backup migrations from older schemas to V10.
+- Workout input validation and derived progression calculated from current records.
+- Huawei Health import validation/deduplication at the local-data layer.
+- Core tests plus provider/ranking/backup validation.
+- Offline-first core data; external databases and AI still require internet.
+
+## Production requirements
+
+In Netlify **Production**, configure these:
 
 ```env
-GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=your_working_gemini_model
-USDA_FDC_API_KEY=your_usda_data_gov_key
+GEMINI_API_KEY=...
+GEMINI_MODEL=...
+USDA_FDC_API_KEY=...
 NUTRITION_DATABASE_ENABLED=true
+
+SFDA_ENABLED=true
+SFDA_CLIENT_ID=...
+SFDA_CLIENT_SECRET=...
+SFDA_TOKEN_URL=...
+SFDA_FOOD_API_URL=https://apis.sfda.gov.sa:9002/v2/Food
+
+UPSTASH_REDIS_REST_URL=...
+UPSTASH_REDIS_REST_TOKEN=...
 ```
 
-## Run
+**Upstash Redis is intentionally required in production.** Local in-memory rate limiting/cache is only a development fallback, because serverless instances do not share memory.
+
+Never expose `GEMINI_API_KEY`, `SFDA_CLIENT_SECRET`, or other secrets to the browser. Rotate any credentials previously pasted into chat or logs.
+
+## Verification
 
 ```bash
 npm install
-npm run dev
+npm run test:core
+npm run typecheck
+npm run build
 ```
 
-Open `http://localhost:3000` and on iPhone use **Add to Home Screen**.
+For the full local verification:
 
-## Apple Health limitation
-A browser/PWA cannot directly access HealthKit. V5 therefore supports importing the extracted `export.xml` from an Apple Health export. Native HealthKit sync would require an iOS native companion/wrapper and is intentionally not faked as a web capability.
+```bash
+npm run verify
+```
 
-## Nutrition accuracy
-Gemini identifies food and estimates portion size. When a strong reference match exists, nutrition is recalculated from the database per 100g. Composite dishes and ambiguous matches remain estimates and should be reviewed before saving.
+## Real-world QA checklist
 
+1. Search a real Saudi packaged product by barcode.
+2. Search a real Egyptian packaged product by barcode/name.
+3. Test SFDA credentials with a real registered product.
+4. Turn off network and verify previously cached foods remain available.
+5. Create/edit/delete a meal.
+6. Create/edit/delete a workout and exercise.
+7. Confirm progression changes after editing/deleting a workout.
+8. Export a backup, clear data, then restore it.
+9. Restore an older backup and confirm migration metadata.
+10. Import real Huawei Health JSON/CSV data and confirm duplicate import does not double-count daily check-ins.
+11. Test production rate limiting with Redis configured.
+12. Review Netlify logs for provider failures; logs intentionally omit secrets, images and request bodies.
 
-## Regional data strategy (Egypt + Saudi Arabia)
+## Huawei Health limitation
 
-The app intentionally does **not** ship a giant embedded regional food catalog. It queries remote sources at runtime and keeps only products you actually use in the local cache.
-
-- Saudi Arabia: Open Food Facts localized search plus an optional official SFDA registered-food API adapter. SFDA's registered-food service supports barcode/keyword lookup and uses bearer authentication; its developer portal issues tokens with client credentials.
-- Egypt: Open Food Facts localized search plus USDA FoodData Central fallback. Egypt's National Nutrition Institute food-composition tables are an important reference, but they are published reference tables rather than a public real-time product API, so the app does not pretend to have a live official Egyptian product API.
-- Local cache: confirmed products are stored in IndexedDB for fast repeat lookups and offline use.
-
-For SFDA, create an app in the SFDA developer portal and place the credentials only in Netlify/server environment variables.
+A web/PWA cannot magically obtain private Huawei Health data just by knowing the account. V10.2 treats Huawei as a validated import/bridge layer. Automatic direct synchronization requires an actual Huawei-supported integration or native companion. The app does not fake direct access.

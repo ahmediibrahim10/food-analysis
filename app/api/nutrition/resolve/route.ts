@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { clientKey, fetchWithTimeout, rateLimitSafe, requestSize, requestId, jsonHeaders, validateSameOrigin, validateJsonBodySize, assertProductionInfrastructure } from "../../../lib/server-safety";
+import { nutritionQuality } from "../../../lib/validation";
+import { logProviderEvent } from "../../../lib/observability";
 
 export const runtime = "nodejs";
 
@@ -109,7 +112,7 @@ async function usda(query:string):Promise<Candidate[]> {
     url.searchParams.set("pageSize","12");
     // Generic photo foods should prefer reference/survey foods over branded labels.
     url.searchParams.set("dataType","Foundation,SR Legacy,Survey (FNDDS)");
-    const r=await fetch(url,{headers:{"User-Agent":"HealthOS/1.1 personal nutrition app"},cache:"no-store"});
+    const r=await fetchWithTimeout(url,{headers:{"User-Agent":"HealthOS/1.1 personal nutrition app"},cache:"no-store"});
     if(!r.ok) continue;
     const data=await r.json();
     for(const f of (data.foods||[])) {
@@ -134,7 +137,7 @@ async function off(query:string):Promise<Candidate[]> {
   url.searchParams.set("json","1");
   url.searchParams.set("page_size","8");
   url.searchParams.set("fields","code,product_name,brands,nutriments,completeness");
-  const r=await fetch(url,{headers:{"User-Agent":"HealthOS/1.1 personal nutrition app"},cache:"no-store"});
+  const r=await fetchWithTimeout(url,{headers:{"User-Agent":"HealthOS/1.1 personal nutrition app"},cache:"no-store"});
   if(!r.ok) return [];
   const data=await r.json();
   return (data.products||[]).map((p:any)=>({
@@ -204,8 +207,16 @@ function matchConfidence(best:Candidate, rawScore:number) {
 }
 
 export async function POST(request:Request) {
+  const rid=requestId();
   try {
+    assertProductionInfrastructure();
+    if(!validateSameOrigin(request))return NextResponse.json({error:"Invalid request origin."},{status:403,headers:jsonHeaders(rid)});
+    const rl=await rateLimitSafe(`resolve:${clientKey(request)}`,30,60_000);
+    if(rl.configurationError)return NextResponse.json({error:"Server protection is temporarily unavailable."},{status:503,headers:jsonHeaders(rid)});
+    if(!rl.ok)return NextResponse.json({error:"Too many nutrition lookups. Please wait a moment."},{status:429,headers:{...jsonHeaders(rid),"Retry-After":"60"}});
+    if(!requestSize(request,1_000_000))return NextResponse.json({error:"Request is too large."},{status:413,headers:jsonHeaders(rid)});
     const body=await request.json();
+    if(!validateJsonBodySize(body,1_000_000))return NextResponse.json({error:"Request is too large."},{status:413,headers:jsonHeaders(rid)});
     const items=Array.isArray(body?.items)?body.items:[];
     if(!items.length) return NextResponse.json({error:"No food items supplied."},{status:400});
 
@@ -226,7 +237,11 @@ export async function POST(request:Request) {
         try { candidates.push(...await off(name)); } catch(e) { console.warn("Open Food Facts lookup failed",e); }
       }
 
-      const ranked=candidates
+      const qualityCandidates=candidates.filter(c=>{
+        const q=nutritionQuality({calories:c.kcal100g,protein:c.protein100g,carbs:c.carbs100g,fat:c.fat100g});
+        return q !== "low" || (c.kcal100g <= 0 && c.protein100g <= 0 && c.carbs100g <= 0 && c.fat100g <= 0);
+      });
+      const ranked=qualityCandidates
         .map(c=>({c,s:score(c,name)}))
         .sort((a,b)=>b.s-a.s);
       const best=ranked[0];
@@ -279,9 +294,10 @@ export async function POST(request:Request) {
         carbs_g:Number(total.carbs_g.toFixed(1)),
         fat_g:Number(total.fat_g.toFixed(1))
       }
-    });
+    },{headers:jsonHeaders(rid)});
   } catch(e) {
-    console.error("Nutrition resolver failed",e);
-    return NextResponse.json({error:e instanceof Error?e.message:"Nutrition database lookup failed."},{status:500});
+    logProviderEvent({requestId:rid,provider:"Nutrition",operation:"resolve",ok:false});
+    const status=e instanceof Error && e.message==="PRODUCTION_INFRASTRUCTURE_MISSING" ? 503 : 500;
+    return NextResponse.json({error:status===503?"Server protection is not configured.":"Nutrition database lookup failed."},{status,headers:jsonHeaders(rid)});
   }
 }

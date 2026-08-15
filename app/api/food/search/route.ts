@@ -1,238 +1,201 @@
 import { NextResponse } from "next/server";
+import { logProviderEvent } from "../../../lib/observability";
+import { regionalScore } from "../../../lib/food-ranking";
+import { clientKey, fetchWithTimeout, rateLimitSafe, cacheGet, cacheSet, cachedToken, saveCachedToken, requestId, jsonHeaders, validateSameOrigin, validateJsonBodySize, assertProductionInfrastructure } from "../../../lib/server-safety";
 
-type FoodResult = { name: string; brand?: string; barcode?: string; source: string; referenceId?: string; calories100g: number; protein100g: number; carbs100g: number; fat100g: number; fiber100g?: number; confidence: number; note?: string; relevance?: number };
-const n = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type FoodResult = {
+  name: string; brand?: string; barcode?: string; source: string; referenceId?: string;
+  calories100g: number; protein100g: number; carbs100g: number; fat100g: number; fiber100g?: number;
+  confidence: number; note?: string; relevance?: number;
+};
+
+const n = (v: unknown) => {
+  if (typeof v === "string") v = v.replace(/,/g, ".");
+  const x = Number(v);
+  return Number.isFinite(x) && x >= 0 ? x : 0;
+};
+const cleanBarcode = (s: string) => s.replace(/\D/g, "");
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, " ").replace(/\s+/g, " ").trim();
 const tokens = (s: string) => norm(s).split(" ").filter(x => x.length > 1);
-const ARABIC_ALIASES: Record<string, string> = { "فراخ":"chicken", "دجاج":"chicken", "رز":"rice", "مكرونة":"pasta", "مكرونه":"pasta", "بيض":"egg", "لحمة":"beef", "لحمه":"beef", "لحم":"beef", "زبادي":"yogurt", "لبن":"milk", "جبنة":"cheese", "جبنه":"cheese", "شوفان":"oats", "فول":"foul", "حمص":"hummus", "طعمية":"falafel", "طعميه":"falafel", "عيش":"bread", "بطاطس":"potato", "سمك":"fish", "تونة":"tuna", "تونه":"tuna", "موز":"banana", "تفاح":"apple" };
-function expandQuery(s: string) { const n = norm(s); return n.split(" ").map(x => ARABIC_ALIASES[x] || x).join(" "); }
+const ARABIC_ALIASES: Record<string,string> = {
+  "فراخ":"chicken","دجاج":"chicken","رز":"rice","مكرونة":"pasta","مكرونه":"pasta","بيض":"egg",
+  "لحمة":"beef","لحمه":"beef","لحم":"beef","زبادي":"yogurt","لبن":"milk","جبنة":"cheese","جبنه":"cheese",
+  "شوفان":"oats","فول":"foul","حمص":"hummus","طعمية":"falafel","طعميه":"falafel","عيش":"bread",
+  "بطاطس":"potato","سمك":"fish","تونة":"tuna","تونه":"tuna","موز":"banana","تفاح":"apple"
+};
+const expandQuery = (s: string) => norm(s).split(" ").map(x => ARABIC_ALIASES[x] || x).join(" ");
 
 const CURATED: FoodResult[] = [
-  { name: "Chicken Mandi", source: "Health OS curated", calories100g: 195, protein100g: 14.5, carbs100g: 14, fat100g: 8.2, confidence: .72, note: "Composite dish · per 100g" },
-  { name: "Mandi rice", source: "Health OS curated", calories100g: 150, protein100g: 2.7, carbs100g: 27.5, fat100g: 3.3, confidence: .70, note: "Prepared rice · per 100g" },
-  { name: "Cooked basmati rice", source: "Health OS curated", calories100g: 130, protein100g: 2.7, carbs100g: 28.2, fat100g: .3, confidence: .76, note: "Cooked plain rice · per 100g" },
-  { name: "Chicken shawarma", source: "Health OS curated", calories100g: 215, protein100g: 20, carbs100g: 5, fat100g: 13, confidence: .68, note: "Recipe and sauces vary · per 100g" },
-  { name: "Chicken kabsa", source: "Health OS curated", calories100g: 190, protein100g: 15, carbs100g: 13, fat100g: 8, confidence: .70, note: "Composite dish · per 100g" },
-  { name: "Hummus", source: "Health OS curated", calories100g: 166, protein100g: 7.9, carbs100g: 14.3, fat100g: 9.6, confidence: .78, note: "Per 100g" },
-  { name: "Foul medames", source: "Health OS curated", calories100g: 110, protein100g: 7.6, carbs100g: 19.7, fat100g: .4, confidence: .76, note: "Oil/toppings vary · per 100g" },
-  { name: "Falafel", source: "Health OS curated", calories100g: 333, protein100g: 13.3, carbs100g: 31.8, fat100g: 17.8, confidence: .76, note: "Per 100g" },
-  { name: "Dates", source: "Health OS curated", calories100g: 282, protein100g: 2.5, carbs100g: 75, fat100g: .4, confidence: .85, note: "Per 100g" },
-  { name: "Arabic pita bread", source: "Health OS curated", calories100g: 275, protein100g: 9.1, carbs100g: 55.7, fat100g: 1.2, confidence: .80, note: "Per 100g" },
-];
+  ["Chicken Mandi",195,14.5,14,8.2,.72],["Mandi rice",150,2.7,27.5,3.3,.70],["Cooked basmati rice",130,2.7,28.2,.3,.76],
+  ["Chicken shawarma",215,20,5,13,.68],["Chicken kabsa",190,15,13,8,.70],["Hummus",166,7.9,14.3,9.6,.78],
+  ["Foul medames",110,7.6,19.7,.4,.76],["Falafel",333,13.3,31.8,17.8,.76],["Dates",282,2.5,75,.4,.85],
+  ["Arabic pita bread",275,9.1,55.7,1.2,.80]
+].map(([name,calories100g,protein100g,carbs100g,fat100g,confidence]) => ({
+  name: String(name), calories100g:Number(calories100g), protein100g:Number(protein100g), carbs100g:Number(carbs100g), fat100g:Number(fat100g),
+  source:"Health OS curated", confidence:Number(confidence), note:"Reference estimate · per 100g"
+}));
 
 function relevance(query: string, name: string, brand = "") {
   const q = tokens(query), hay = norm(`${name} ${brand}`);
   if (!q.length) return 0;
   const hits = q.filter(x => hay.includes(x));
   if (!hits.length) return 0;
-  const all = hits.length === q.length;
   let score = hits.length / q.length * 70;
   if (norm(name) === norm(query)) score += 100;
   if (hay.startsWith(norm(query))) score += 25;
-  if (all) score += 25;
+  if (hits.length === q.length) score += 25;
   return score;
 }
 
-function usdaNutrients(food: any) {
+function nutrientsFromUSDA(food: any) {
   const ns = Array.isArray(food?.foodNutrients) ? food.foodNutrients : [];
   const find = (ids: number[]) => n(ns.find((x: any) => ids.includes(Number(x.nutrientId)))?.value);
-  return { calories100g: find([1008]), protein100g: find([1003]), carbs100g: find([1005]), fat100g: find([1004]), fiber100g: find([1079]) };
+  return { calories100g:find([1008]), protein100g:find([1003]), carbs100g:find([1005]), fat100g:find([1004]), fiber100g:find([1079]) };
 }
 
 async function searchUSDA(query: string): Promise<FoodResult[]> {
-  query = expandQuery(query);
   const key = process.env.USDA_FDC_API_KEY;
   if (!key) return [];
-  const url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search");
-  url.searchParams.set("api_key", key); url.searchParams.set("query", query); url.searchParams.set("pageSize", "20"); url.searchParams.set("dataType", "Foundation,SR Legacy,Survey (FNDDS),Branded");
-  const r = await fetch(url, { cache: "no-store", headers: { "User-Agent": "HealthOS/2.0 personal nutrition app" } });
-  if (!r.ok) return [];
-  const data = await r.json();
-  return (data.foods || []).map((f: any) => ({ name: f.description || query, brand: f.brandName || f.brandOwner || undefined, source: "USDA", referenceId: String(f.fdcId), ...usdaNutrients(f), confidence: f.dataType === "Foundation" ? .94 : .88, note: `${f.dataType || "USDA"} · per 100g`, relevance: relevance(query, f.description || "", f.brandName || f.brandOwner || "") })).filter((x: FoodResult) => (x.relevance || 0) >= (tokens(query).length > 1 ? 50 : 20) && (x.calories100g > 0 || x.protein100g > 0 || x.carbs100g > 0));
-}
-
-const REGIONAL_COUNTRIES = ["sa","eg"] as const;
-const REGIONAL_TAG_RE = /saudi|egypt/i;
-const COUNTRY_NAME: Record<string,string> = { sa: "Saudi Arabia", eg: "Egypt" };
-
-async function searchOFF(query: string, cc = "sa", lc = "ar"): Promise<FoodResult[]> {
-  query = expandQuery(query);
-  const url = new URL("https://world.openfoodfacts.org/cgi/search.pl");
-  url.searchParams.set("search_terms", query);
-  url.searchParams.set("search_simple", "1");
-  url.searchParams.set("action", "process");
-  url.searchParams.set("json", "1");
-  url.searchParams.set("page_size", "30");
-  url.searchParams.set("cc", cc);
-  url.searchParams.set("lc", lc);
-  url.searchParams.set("countries_tags_en", COUNTRY_NAME[cc] || "Saudi Arabia");
-  url.searchParams.set("fields", "code,product_name,product_name_ar,brands,nutriments,completeness,countries_tags");
-  const r = await fetch(url, { cache: "no-store", headers: { "User-Agent": "HealthOS/7.0 personal nutrition app (personal use)" } });
-  if (!r.ok) return [];
-  const data = await r.json();
-  return (data.products || []).map((p: any) => {
-    const countries = Array.isArray(p.countries_tags) ? p.countries_tags : [];
-    const regional = countries.some((c: string) => REGIONAL_TAG_RE.test(c));
-    return {
-      name: p.product_name_ar || p.product_name || query,
-      brand: p.brands || undefined,
-      barcode: p.code,
-      source: regional ? "Open Food Facts · Middle East" : "Open Food Facts",
-      referenceId: p.code,
-      calories100g: n(p.nutriments?.["energy-kcal_100g"]),
-      protein100g: n(p.nutriments?.proteins_100g),
-      carbs100g: n(p.nutriments?.carbohydrates_100g),
-      fat100g: n(p.nutriments?.fat_100g),
-      fiber100g: n(p.nutriments?.fiber_100g),
-      confidence: regional ? .88 : .76,
-      note: regional ? `Regional product match · ${cc.toUpperCase()} · per 100g` : "Open Food Facts · per 100g",
-      relevance: relevance(query, p.product_name_ar || p.product_name || "", p.brands || "")
-    };
-  }).filter((x: FoodResult) => (x.relevance || 0) >= (tokens(query).length > 1 ? 45 : 15) && (x.calories100g > 0 || x.protein100g > 0 || x.carbs100g > 0));
-}
-
-async function sfdaAccessToken(): Promise<string | null> {
-  const clientId = process.env.SFDA_CLIENT_ID;
-  const clientSecret = process.env.SFDA_CLIENT_SECRET;
-  const tokenUrl = process.env.SFDA_TOKEN_URL;
-  if (!clientId || !clientSecret || !tokenUrl) return null;
   try {
-    const body = new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret });
-    const r = await fetch(tokenUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" }, body, cache: "no-store" });
-    if (!r.ok) return null;
-    const data = await r.json();
-    return data.access_token || data.token || null;
-  } catch { return null; }
-}
-
-function mapSFDAProduct(p: any, barcode?: string): FoodResult | null {
-  const product = p?.data || p?.result || p?.product || p;
-  if (!product || typeof product !== "object") return null;
-  const name = product.productNameAr || product.product_name_ar || product.tradeNameAr || product.trade_name_ar || product.productName || product.tradeName || product.itemDescription || product.name;
-  if (!name) return null;
-  const code = String(product.barcode || product.barCode || product.Barcode || product.gtin || barcode || "").replace(/\D/g, "");
-  return { name: String(name), brand: product.brandName || product.brand || product.companyName, barcode: code || undefined, source: "SFDA · Saudi Arabia", referenceId: product.registrationNumber || product.productNumber || code || undefined, calories100g: n(product.calories100g ?? product.energyKcal100g ?? product.energy), protein100g: n(product.protein100g ?? product.protein), carbs100g: n(product.carbohydrates100g ?? product.carbohydrates ?? product.carbs), fat100g: n(product.fat100g ?? product.fat), fiber100g: n(product.fiber100g ?? product.fiber), confidence: .99, note: "Saudi FDA registered product source. Nutrition fields are used only when supplied by the source." };
-}
-
-async function searchSFDA(query: string, barcode?: string): Promise<FoodResult[]> {
-  if (process.env.SFDA_ENABLED !== "true") return [];
-  const apiUrl = process.env.SFDA_FOOD_API_URL;
-  if (!apiUrl) return [];
-  const token = await sfdaAccessToken();
-  if (!token) return [];
-  try {
-    const url = new URL(apiUrl);
-    if (barcode) url.searchParams.set(process.env.SFDA_BARCODE_PARAM || "barcode", barcode);
-    else if (query) url.searchParams.set(process.env.SFDA_QUERY_PARAM || "keyword", query);
-    const r = await fetch(url, { cache: "no-store", headers: { Accept: "application/json", Authorization: `Bearer ${token}` } });
+    const url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search");
+    url.searchParams.set("api_key", key); url.searchParams.set("query", expandQuery(query)); url.searchParams.set("pageSize", "20");
+    url.searchParams.set("dataType", "Foundation,SR Legacy,Survey (FNDDS),Branded");
+    const r = await fetchWithTimeout(url, { cache:"no-store", headers:{"User-Agent":"HealthOS personal nutrition app"} });
     if (!r.ok) return [];
     const data = await r.json();
-    const raw = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.results) ? data.results : [data];
-    return raw.map((x: any) => mapSFDAProduct(x, barcode)).filter(Boolean) as FoodResult[];
+    return (data.foods || []).map((f:any) => ({
+      name:f.description || query, brand:f.brandName || f.brandOwner || undefined, source:"USDA", referenceId:String(f.fdcId),
+      ...nutrientsFromUSDA(f), confidence:f.dataType === "Foundation" ? .94 : .86,
+      note:`${f.dataType || "USDA"} · per 100g`, relevance:relevance(query,f.description || "",f.brandName || f.brandOwner || "")
+    })).filter((x:FoodResult)=>(x.relevance || 0) >= (tokens(query).length > 1 ? 45 : 15) && (x.calories100g || x.protein100g || x.carbs100g));
   } catch { return []; }
 }
 
-function barcodeVariants(code: string): string[] {
-  const clean = code.replace(/\\D/g, "");
-  const variants = new Set<string>();
-  if (!clean) return [];
-  variants.add(clean);
-  if (clean.length === 12) variants.add(`0${clean}`);
-  if (clean.length === 13 && clean.startsWith("0")) variants.add(clean.slice(1));
-  if (clean.length === 13) variants.add(`0${clean}`);
-  if (clean.length === 14 && clean.startsWith("0")) variants.add(clean.slice(1));
-  if (clean.length === 7) variants.add(`0${clean}`);
-  if (clean.length === 8) variants.add(`00000${clean}`);
-  return [...variants];
-}
-
-function mapOFFProduct(p: any, cc: string): FoodResult {
-  const countries = Array.isArray(p.countries_tags) ? p.countries_tags : [];
-  const regional = countries.some((c: string) => REGIONAL_TAG_RE.test(c));
-  return {
-    name: p.product_name_ar || p.product_name || `Barcode ${p.code || ""}`,
-    brand: p.brands || undefined,
-    barcode: p.code,
-    source: regional ? "Open Food Facts · Middle East" : "Open Food Facts",
-    referenceId: p.code,
-    calories100g: n(p.nutriments?.["energy-kcal_100g"]),
-    protein100g: n(p.nutriments?.proteins_100g),
-    carbs100g: n(p.nutriments?.carbohydrates_100g),
-    fat100g: n(p.nutriments?.fat_100g),
-    fiber100g: n(p.nutriments?.fiber_100g),
-    confidence: regional ? .98 : .94,
-    note: regional ? `Barcode verified · ${cc.toUpperCase()} / Middle East · per 100g` : "Barcode verified · Open Food Facts · per 100g",
-  };
-}
-
-async function barcodeOFF(code: string, cc = "sa", lc = "ar"): Promise<FoodResult | null> {
-  for (const variant of barcodeVariants(code)) {
-    try {
-      const url = new URL(`https://world.openfoodfacts.org/api/v3/product/${encodeURIComponent(variant)}`);
-      url.searchParams.set("product_type", "all");
-      url.searchParams.set("cc", cc);
-      url.searchParams.set("lc", lc);
-      url.searchParams.set("tags_lc", lc);
-      url.searchParams.set("fields", "code,product_name,product_name_ar,brands,nutriments,completeness,countries_tags");
-      const r = await fetch(url, { cache: "no-store", headers: { "User-Agent": "HealthOS/7.0 personal nutrition app (personal use)" } });
-      if (!r.ok) continue;
-      const data = await r.json();
-      if (data.status !== "success" && data.status !== 1) continue;
-      if (!data.product) continue;
-      return mapOFFProduct(data.product, cc);
-    } catch {}
-  }
-  return null;
-}
-
-async function barcodeRegionalSearch(code: string, cc = "sa", lc = "ar"): Promise<FoodResult[]> {
-  const results: FoodResult[] = [];
-  for (const variant of barcodeVariants(code)) {
-    try {
-      const url = new URL("https://world.openfoodfacts.org/cgi/search.pl");
-      url.searchParams.set("search_terms", variant);
-      url.searchParams.set("search_simple", "1");
-      url.searchParams.set("action", "process");
-      url.searchParams.set("json", "1");
-      url.searchParams.set("page_size", "20");
-      url.searchParams.set("cc", cc);
-      url.searchParams.set("lc", lc);
-      url.searchParams.set("fields", "code,product_name,product_name_ar,brands,nutriments,completeness,countries_tags");
-      const r = await fetch(url, { cache: "no-store", headers: { "User-Agent": "HealthOS/7.0 personal nutrition app (personal use)" } });
-      if (!r.ok) continue;
-      const data = await r.json();
-      for (const p of (data.products || [])) {
-        if (String(p.code || "").replace(/\\D/g, "") === variant.replace(/\\D/g, "")) results.push(mapOFFProduct(p, cc));
-      }
-    } catch {}
-  }
-  return results;
-}
-
-export async function GET(request: Request) {
+async function searchOFF(query: string, cc: "sa"|"eg"): Promise<FoodResult[]> {
   try {
-    const { searchParams } = new URL(request.url);
-    const query = searchParams.get("q")?.trim() || "";
-    const barcode = searchParams.get("barcode")?.trim() || "";
-    const cc = (searchParams.get("cc") || "sa").toLowerCase();
-    const lc = (searchParams.get("lc") || "ar").toLowerCase();
-    if (!query && !barcode) return NextResponse.json({ error: "Enter a food or barcode." }, { status: 400 });
-    if (barcode) {
-      const clean = barcode.replace(/\D/g, "");
-      if (cc === "sa") {
-        const sfda = await searchSFDA("", clean);
-        if (sfda.length) return NextResponse.json({ items: sfda.slice(0, 5), barcode: clean, found: true });
-      }
-      const item = await barcodeOFF(clean, cc, lc);
-      if (item) return NextResponse.json({ items: [item], barcode: clean, found: true });
-      const fallback = await barcodeRegionalSearch(clean, cc, lc);
-      return NextResponse.json({ items: fallback.slice(0, 5), barcode: clean, found: fallback.length > 0 });
+    const url = new URL("https://world.openfoodfacts.org/cgi/search.pl");
+    url.searchParams.set("search_terms", expandQuery(query)); url.searchParams.set("search_simple","1"); url.searchParams.set("action","process");
+    url.searchParams.set("json","1"); url.searchParams.set("page_size","30"); url.searchParams.set("cc",cc); url.searchParams.set("lc","ar");
+    url.searchParams.set("countries_tags_en",cc === "sa" ? "Saudi Arabia" : "Egypt");
+    url.searchParams.set("fields","code,product_name,product_name_ar,brands,nutriments,completeness,countries_tags");
+    const r = await fetchWithTimeout(url,{cache:"no-store",headers:{"User-Agent":"HealthOS personal nutrition app"}});
+    if (!r.ok) return [];
+    const data = await r.json();
+    return (data.products || []).map((p:any) => {
+      const name = p.product_name_ar || p.product_name || query;
+      const countries = Array.isArray(p.countries_tags) ? p.countries_tags.join(" ") : "";
+      const regional = new RegExp(cc === "sa" ? "saudi|السعود" : "egypt|مصر","i").test(countries);
+      const regionBoost = regional ? 28 : 0;
+      return {
+        name, brand:p.brands || undefined, barcode:p.code ? cleanBarcode(String(p.code)) : undefined, source:regional ? `Open Food Facts · ${cc === "sa" ? "Saudi Arabia" : "Egypt"}` : "Open Food Facts",
+        referenceId:p.code, calories100g:n(p.nutriments?.["energy-kcal_100g"]), protein100g:n(p.nutriments?.proteins_100g),
+        carbs100g:n(p.nutriments?.carbohydrates_100g), fat100g:n(p.nutriments?.fat_100g), fiber100g:n(p.nutriments?.fiber_100g),
+        confidence:regional ? .88 : .75, note:"Open Food Facts · per 100g", relevance:relevance(query,name,p.brands || "") + regionBoost
+      } as FoodResult;
+    }).filter((x:FoodResult)=>(x.relevance || 0) >= (tokens(query).length > 1 ? 45 : 15) && (x.calories100g || x.protein100g || x.carbs100g));
+  } catch { return []; }
+}
+
+async function sfdaToken(): Promise<string|null> {
+  const id=process.env.SFDA_CLIENT_ID, secret=process.env.SFDA_CLIENT_SECRET, url=process.env.SFDA_TOKEN_URL;
+  if (!id || !secret || !url || process.env.SFDA_ENABLED !== "true") return null;
+  const cacheKey=`sfda:${id.slice(0,12)}`;
+  const shared=await cachedToken(cacheKey);
+  if(shared)return shared.value;
+  try {
+    const body=new URLSearchParams({grant_type:"client_credentials",client_id:id,client_secret:secret});
+    const r=await fetchWithTimeout(url,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Accept":"application/json"},body,cache:"no-store"});
+    if(!r.ok)return null;
+    const data=await r.json();
+    const token=data.access_token || data.accessToken || data.token || null;
+    if(token){
+      const expires=Number(data.expires_in||data.expiresIn||86400);
+      const expiresAt=Date.now()+Math.min(Math.max(expires,300),86400)*1000;
+      await saveCachedToken(cacheKey,String(token),expiresAt);
+      return String(token);
     }
-    const curated = CURATED.map(x => ({ ...x, relevance: relevance(query, x.name) })).filter(x => (x.relevance || 0) > 0);
-    const [u, o, sfd] = await Promise.allSettled([searchUSDA(query), searchOFF(query, cc, lc), cc === "sa" ? searchSFDA(query) : Promise.resolve([])]);
-    const all = [...curated, ...(u.status === "fulfilled" ? u.value : []), ...(o.status === "fulfilled" ? o.value : []), ...(sfd.status === "fulfilled" ? sfd.value : [])];
-    const dedup = new Map<string, FoodResult>();
-    for (const item of all.sort((a, b) => (b.relevance || 0) - (a.relevance || 0))) { const key = `${item.source}:${item.referenceId || item.name}`; if (!dedup.has(key)) dedup.set(key, item); }
-    return NextResponse.json({ items: Array.from(dedup.values()).slice(0, 15) });
-  } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "Food search failed." }, { status: 500 }); }
+    return null;
+  } catch{return null;}
+}
+
+function mapSFDA(p:any, barcode?:string): FoodResult|null {
+  const x=p?.data || p?.result || p?.product || p;
+  if(!x || typeof x !== "object")return null;
+  const name=x.productNameAr || x.product_name_ar || x.tradeNameAr || x.trade_name_ar || x.productName || x.tradeName || x.itemDescription || x.name;
+  if(!name)return null;
+  const code=cleanBarcode(String(x.barcode || x.barCode || x.Barcode || x.gtin || barcode || ""));
+  return {name:String(name),brand:x.brandName || x.brand || x.companyName,barcode:code || undefined,source:"SFDA · Saudi Arabia",referenceId:String(x.registrationNumber || x.productNumber || code || ""),
+    calories100g:n(x.calories100g ?? x.energyKcal100g ?? x.energy),protein100g:n(x.protein100g ?? x.protein),carbs100g:n(x.carbohydrates100g ?? x.carbohydrates ?? x.carbs),fat100g:n(x.fat100g ?? x.fat),fiber100g:n(x.fiber100g ?? x.fiber),confidence:.99,
+    note:"SFDA registered product. Nutrition values are shown only when supplied by the source."};
+}
+
+async function searchSFDA(query:string, barcode?:string):Promise<FoodResult[]> {
+  const base=process.env.SFDA_FOOD_API_URL, token=await sfdaToken();
+  if(!base || !token)return [];
+  try {
+    const endpoint=barcode ? `${base.replace(/\/$/,"")}/product/barcode/${encodeURIComponent(cleanBarcode(barcode))}` : `${base.replace(/\/$/,"")}/product/search/${encodeURIComponent(query)}/1`;
+    const started=Date.now();
+    const r=await fetchWithTimeout(endpoint,{cache:"no-store",headers:{Accept:"application/json",Authorization:`Bearer ${token}`}});
+    logProviderEvent({requestId:"provider",provider:"SFDA",operation:barcode?"barcode":"search",ok:r.ok,status:r.status,durationMs:Date.now()-started});
+    if(!r.ok)return [];
+    const data=await r.json();
+    const raw=Array.isArray(data)?data:Array.isArray(data?.data)?data.data:Array.isArray(data?.results)?data.results:[data];
+    return raw.map((x:any)=>mapSFDA(x,barcode)).filter(Boolean) as FoodResult[];
+  } catch{return []}
+}
+
+function dedupe(items:FoodResult[]) {
+  const seen=new Set<string>();
+  return items.filter(x=>{const k=(x.barcode ? `b:${x.barcode}` : `n:${norm(`${x.name}|${x.brand||""}`)}`); if(seen.has(k))return false; seen.add(k); return true;});
+}
+
+
+const responseCache=new Map<string,{expiresAt:number;payload:any}>();
+const CACHE_TTL=10*60_000;
+export async function GET(req: Request) {
+  const rid=requestId();
+  try { assertProductionInfrastructure(); } catch { return NextResponse.json({items:[],error:"Server protection is not configured."},{status:503,headers:jsonHeaders(rid)}); }
+  const rl=await rateLimitSafe(`food-search:${clientKey(req)}`,40,60_000);
+  if(rl.configurationError)return NextResponse.json({items:[],error:"Server protection is temporarily unavailable."},{status:503,headers:jsonHeaders(rid)});
+  if(!rl.ok)return NextResponse.json({items:[],primarySource:"rate-limit",error:"Too many searches. Please wait a moment."},{status:429,headers:{...jsonHeaders(rid),"Retry-After":"60"}});
+  const {searchParams}=new URL(req.url);
+  const q=(searchParams.get("q") || "").trim();
+  const barcode=cleanBarcode(searchParams.get("barcode") || "");
+  if(!q && !barcode)return NextResponse.json({items:[],source:"none"});
+  const cacheKey=`${barcode}|${q.toLowerCase()}`;
+  const cached=responseCache.get(cacheKey);
+  if(cached && cached.expiresAt>Date.now())return NextResponse.json({...cached.payload,cached:true},{headers:jsonHeaders(rid)});
+  const shared=await cacheGet<any>(cacheKey);
+  if(shared){responseCache.set(cacheKey,{expiresAt:Date.now()+CACHE_TTL,payload:shared});return NextResponse.json({...shared,cached:true},{headers:jsonHeaders(rid)});}
+
+  if(barcode){
+    // Barcode is deliberately source-first: authoritative regional product registry before generic databases.
+    const sfda=await searchSFDA("",barcode);
+    if(sfda.length){const payload={items:dedupe(sfda),primarySource:"SFDA"};responseCache.set(cacheKey,{expiresAt:Date.now()+CACHE_TTL,payload}); void cacheSet(cacheKey,payload,600); return NextResponse.json(payload,{headers:jsonHeaders(rid)});}
+
+    const off = await Promise.all(["sa","eg"].map(cc => searchOFF(barcode,cc as "sa"|"eg")));
+    const offItems=dedupe(off.flat());
+    if(offItems.length){const payload={items:offItems,primarySource:"Open Food Facts"};responseCache.set(cacheKey,{expiresAt:Date.now()+CACHE_TTL,payload}); void cacheSet(cacheKey,payload,600); return NextResponse.json(payload,{headers:jsonHeaders(rid)});}
+
+    // USDA does not guarantee packaged barcode coverage, so it is a fallback only.
+    const usda=await searchUSDA(barcode);
+    if(usda.length){const payload={items:usda,primarySource:"USDA"};responseCache.set(cacheKey,{expiresAt:Date.now()+CACHE_TTL,payload}); void cacheSet(cacheKey,payload,600); return NextResponse.json(payload,{headers:jsonHeaders(rid)});}
+    const payload={items:[],primarySource:"none"};responseCache.set(cacheKey,{expiresAt:Date.now()+60_000,payload}); void cacheSet(cacheKey,payload,60); return NextResponse.json(payload,{headers:jsonHeaders(rid)});
+  }
+
+  // Staged provider strategy: start with the regional authority, then broaden only
+  // when results are weak. This cuts API traffic while keeping a large fallback net.
+  const sfda=await searchSFDA(q);
+  let off:FoodResult[][]=[];
+  let usda:FoodResult[]=[];
+  if(sfda.length<5){ off=await Promise.all(["sa","eg"].map(cc=>searchOFF(q,cc as "sa"|"eg"))); }
+  if(sfda.length + off.flat().length < 8){ usda=await searchUSDA(q); }
+  const all=[...sfda,...off.flat(),...usda,...CURATED.map(x=>({...x,relevance:relevance(q,x.name)}))].filter(x=>(x.relevance || 0) > 0);
+  all.sort((a,b)=>regionalScore(b,q)-regionalScore(a,q));
+  const payload={items:dedupe(all).slice(0,30),primarySource:sfda.length?"SFDA":off.flat().length?"Open Food Facts":usda.length?"USDA":"Health OS"};
+  responseCache.set(cacheKey,{expiresAt:Date.now()+CACHE_TTL,payload});
+  return NextResponse.json(payload,{headers:jsonHeaders(rid)});
 }

@@ -1,12 +1,15 @@
 {
   "name": "health-os",
-  "version": "0.7.0",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "start": "next start"
+    "start": "next start",
+    "test:core": "node --experimental-strip-types --test tests/core.test.ts tests/provider.test.ts",
+    "verify": "npm run test:core && npm run test:integration && npm run typecheck && npm run build",
+    "test:integration": "node --experimental-strip-types --test tests/integration.test.ts"
   },
   "dependencies": {
     "dexie": "^4.0.8",
