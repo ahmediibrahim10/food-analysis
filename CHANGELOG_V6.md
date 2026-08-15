@@ -34,3 +34,15 @@ A normal iPhone PWA cannot silently read Huawei Health's private app storage in 
 - Improved food-photo preview sizing so images are not unnecessarily cropped.
 - Improved barcode camera sizing on small screens.
 - Improved modal and bottom-navigation behavior on narrow iPhone screens.
+
+## V6.4.0 — Stability & TypeScript cleanup
+- Fixed `MiniChart` language prop error (`Cannot find name 'lang'`).
+- Passed `lang` explicitly into chart rendering so Egyptian Arabic/English empty states remain localized.
+- Kept ZXing barcode scanning and Middle East lookup flow from V6.3.
+- Prepared the release for a clean TypeScript/production build.
+
+## V6.4.0 — Stability, i18n & iPhone polish
+- Fixed the `MiniChart` TypeScript error by passing `lang` explicitly.
+- Localized remaining user-facing chart, scanner, image, and workout strings in Egyptian Arabic.
+- Kept ZXing barcode scanning and Middle East product lookup from V6.3.
+- Preserved local-first storage, Gemini food analysis, USDA/Open Food Facts lookup, Huawei Health import, workouts, progress, PWA, and bilingual UI.
