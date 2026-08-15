@@ -1,0 +1,60 @@
+{
+  "version": "7.1",
+  "priority": [
+    {
+      "id": "local-cache",
+      "name": "Health OS Local Product Cache",
+      "type": "local",
+      "trust": "user-verified"
+    },
+    {
+      "id": "regional-core",
+      "name": "Health OS Middle-East Regional Core",
+      "type": "embedded",
+      "trust": "reference"
+    },
+    {
+      "id": "sfda",
+      "name": "Saudi Food and Drug Authority",
+      "type": "official",
+      "countries": [
+        "sa"
+      ],
+      "productLookup": true
+    },
+    {
+      "id": "off",
+      "name": "Open Food Facts",
+      "type": "open",
+      "countries": "global",
+      "barcode": true
+    },
+    {
+      "id": "usda",
+      "name": "USDA FoodData Central",
+      "type": "official",
+      "countries": "global",
+      "barcode": false
+    },
+    {
+      "id": "emfid",
+      "name": "Eastern Mediterranean Region Food Information Data Bank",
+      "type": "regional-reference",
+      "countries": [
+        "eg",
+        "lb",
+        "kw",
+        "ma",
+        "om",
+        "jo",
+        "ps"
+      ]
+    }
+  ],
+  "officialUrls": {
+    "sfdaProducts": "https://www.sfda.gov.sa/ar/products",
+    "sfdaComposition": "https://www.sfda.gov.sa/ar/node/5521984",
+    "tameni": "https://tameni.sfda.gov.sa/",
+    "emfid": "https://emfid.org/frontend/web/index.php?r=site%2Ffooddatabank"
+  }
+}

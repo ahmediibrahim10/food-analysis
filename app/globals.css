@@ -55,3 +55,16 @@ button{touch-action:manipulation;}
 .barcodeFrame span{background:rgba(0,0,0,.65);color:#fff;border-radius:999px;padding:6px 10px;font-size:12px}
 .barcodeFallback{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap}
 @media(max-width:480px){.barcodeCamera{aspect-ratio:3/4;margin-inline:-2px}.barcodeFrame{inset:30% 7%}.barcodeFallback{align-items:stretch}.barcodeFallback .secondaryButton{width:100%}}
+
+/* V7 Regional Barcode Engine */
+.regionRow{display:flex;align-items:center;gap:10px;margin:10px 0;padding:10px 12px;border:1px solid var(--border,#e6e6e6);border-radius:14px;background:var(--card,#fff)}
+.regionRow span{font-size:13px;font-weight:700;flex:1}
+.regionRow select{min-height:42px;border-radius:10px;padding:0 10px;max-width:190px}
+.cameraActions{position:absolute;left:12px;right:12px;bottom:12px;display:flex;gap:8px;justify-content:center;z-index:3}
+.cameraActions button,.cameraUpload{min-height:44px;border:0;border-radius:12px;padding:0 16px;display:inline-flex;align-items:center;justify-content:center;background:rgba(20,20,20,.82);color:#fff;font-weight:700}
+.cameraUpload input{display:none}
+.barcodeCamera{position:relative;overflow:hidden;border-radius:18px;background:#111}
+.barcodeCamera video{width:100%;height:min(52svh,430px);object-fit:cover;display:block}
+.barcodeFrame{position:absolute;inset:16% 10%;border:2px solid rgba(255,255,255,.9);border-radius:20px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:18px;pointer-events:none}
+.barcodeFrame span{background:rgba(0,0,0,.68);color:#fff;padding:8px 12px;border-radius:10px;font-size:13px}
+@media(max-width:430px){.regionRow{align-items:flex-start}.regionRow select{max-width:165px}.lookupTopBar{flex-wrap:wrap}.lookupTopBar>span{width:100%}}

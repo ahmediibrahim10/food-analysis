@@ -41,3 +41,14 @@ A browser/PWA cannot directly access HealthKit. V5 therefore supports importing 
 
 ## Nutrition accuracy
 Gemini identifies food and estimates portion size. When a strong reference match exists, nutrition is recalculated from the database per 100g. Composite dishes and ambiguous matches remain estimates and should be reviewed before saving.
+
+
+## Regional data strategy (Egypt + Saudi Arabia)
+
+The app intentionally does **not** ship a giant embedded regional food catalog. It queries remote sources at runtime and keeps only products you actually use in the local cache.
+
+- Saudi Arabia: Open Food Facts localized search plus an optional official SFDA registered-food API adapter. SFDA's registered-food service supports barcode/keyword lookup and uses bearer authentication; its developer portal issues tokens with client credentials.
+- Egypt: Open Food Facts localized search plus USDA FoodData Central fallback. Egypt's National Nutrition Institute food-composition tables are an important reference, but they are published reference tables rather than a public real-time product API, so the app does not pretend to have a live official Egyptian product API.
+- Local cache: confirmed products are stored in IndexedDB for fast repeat lookups and offline use.
+
+For SFDA, create an app in the SFDA developer portal and place the credentials only in Netlify/server environment variables.

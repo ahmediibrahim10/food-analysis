@@ -11,12 +11,29 @@ export type DailyCheckin = { id?: number; date: string; water: number; steps: nu
 export type ProgramDay = { name: string; exercises: WorkoutExercise[] };
 export type WorkoutProgram = { id?: number; name: string; days: ProgramDay[]; updatedAt: number };
 export type HuaweiSync = { id?: number; source: "huawei-health"; syncedAt: number; importedAt: number; records: number; note?: string };
+export type LocalFoodProduct = {
+  id?: number;
+  barcode: string;
+  name: string;
+  brand?: string;
+  source: string;
+  referenceId?: string;
+  calories100g: number;
+  protein100g: number;
+  carbs100g: number;
+  fat100g: number;
+  fiber100g?: number;
+  country?: string;
+  language?: string;
+  verifiedAt: number;
+};
 
 class HealthDB extends Dexie {
-  meals!: Table<Meal, number>; workouts!: Table<Workout, number>; weights!: Table<WeightEntry, number>; goals!: Table<Goal, number>; checkins!: Table<DailyCheckin, number>; favorites!: Table<FoodFavorite, number>; profiles!: Table<Profile, number>; programs!: Table<WorkoutProgram, number>; huaweiSyncs!: Table<HuaweiSync, number>;
+  meals!: Table<Meal, number>; workouts!: Table<Workout, number>; weights!: Table<WeightEntry, number>; goals!: Table<Goal, number>; checkins!: Table<DailyCheckin, number>; favorites!: Table<FoodFavorite, number>; profiles!: Table<Profile, number>; programs!: Table<WorkoutProgram, number>; huaweiSyncs!: Table<HuaweiSync, number>; localProducts!: Table<LocalFoodProduct, number>;
   constructor() {
     super("health-os");
     this.version(6).stores({ meals: "++id, createdAt, mealType", workouts: "++id, date, completed, createdAt, programId", weights: "++id, date, createdAt", goals: "++id, updatedAt", checkins: "++id, date, createdAt", favorites: "++id, name, barcode, createdAt", profiles: "++id, updatedAt", programs: "++id, updatedAt", huaweiSyncs: "++id, source, syncedAt, importedAt" });
+    this.version(7).stores({ meals: "++id, createdAt, mealType", workouts: "++id, date, completed, createdAt, programId", weights: "++id, date, createdAt", goals: "++id, updatedAt", checkins: "++id, date, createdAt", favorites: "++id, name, barcode, createdAt", profiles: "++id, updatedAt", programs: "++id, updatedAt", huaweiSyncs: "++id, source, syncedAt, importedAt", localProducts: "++id, &barcode, name, brand, country, verifiedAt" });
   }
 }
 export const db = new HealthDB();
