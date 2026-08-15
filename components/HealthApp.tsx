@@ -53,7 +53,12 @@ export default function HealthApp(){
     <header className="topbar"><div className="brandBlock"><div className="brandIcon">✦</div><div><div className="eyebrow">{t(lang,"appName")}</div><h1 className="title">{title} {tab==="home"&&"👋"}</h1></div></div><button className="avatar" onClick={()=>setSettings(true)}>A</button></header>
     {!profile&&<ProfilePrompt lang={lang} onOpen={()=>setProfileEditor(true)}/>} 
     {tab==="home"&&<Home lang={lang} totals={totals} goal={targets} todayMeals={todayMeals} todayWorkout={todayWorkout} todayWorkoutAny={todayWorkoutAny} weights={weights} checkin={checkin} profile={profile} insight={insight} onScan={()=>setScanner(true)} onWorkout={()=>setWorkoutEditor(true)} onWeight={()=>setWeightEditor(true)} onGoal={()=>setGoalEditor(true)} onCheckin={saveCheckin} onNutrition={()=>setTab("nutrition")} onFoodLookup={()=>setFoodLookup(true)} onProgress={()=>setTab("progress")} onProfile={()=>setProfileEditor(true)} />}
-    {tab==="nutrition"&&<Nutrition lang={lang} meals={todayMeals} totals={totals} goal={targets} onScan={()=>setScanner(true)} onLookup={()=>setFoodLookup(true)} onDelete={async id=>{if(id){await db.meals.delete(id);await refresh()}}} onPlan={plan} onSetPlan={setPlan}/>} 
+    {tab==="nutrition"&&<Nutrition lang={lang} meals={todayMeals} totals={totals} goal={targets} onScan={()=>setScanner(true)} onLookup={()=>setFoodLookup(true)} onDelete={async (id: number) => {
+  if (id) {
+    await db.meals.delete(id);
+    await refresh();
+  }
+}} onPlan={plan} onSetPlan={setPlan}/>} 
     {tab==="workout"&&<WorkoutPage lang={lang} workouts={workouts} programs={programs} onAdd={()=>setWorkoutEditor(true)} onProgram={()=>setProgramEditor(true)} onApply={applyProgram} onRefresh={refresh}/>} 
     {tab==="progress"&&<Progress lang={lang} weights={weights} goal={targets} profile={profile} workouts={workouts} meals={meals} checkins={checkin} onWeight={()=>setWeightEditor(true)} />}
     </div><nav className="bottomNav">{([['home','⌂'],['nutrition','◉'],['workout','▣'],['progress','↗']] as const).map(([id,icon])=><button key={id} className={`navItem ${tab===id?'active':''}`} onClick={()=>setTab(id)}><span className="navIcon">{icon}</span><span>{t(lang,id)}</span></button>)}</nav>
